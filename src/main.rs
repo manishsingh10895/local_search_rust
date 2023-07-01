@@ -1,13 +1,10 @@
+use serde_json;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::{
-    fs::{self, File},
-    path::Path,
-    process::exit,
-};
+use std::{fs::File, path::Path, process::exit};
 use xml::reader::{EventReader, XmlEvent};
 
-fn index(doc_content: &str) -> HashMap<String, usize> {
+fn index(_doc_content: &str) -> HashMap<String, usize> {
     unimplemented!();
 }
 
@@ -99,7 +96,19 @@ fn read_xml_file<P: AsRef<Path>>(file_path: P) -> std::io::Result<String> {
     Ok(content)
 }
 
-fn main() {
+fn main() -> std::io::Result<()> {
+    let index_path = "index.json";
+    let index_file = File::open(index_path)?;
+    println!("Reading {index_path}");
+
+    let global_index: TermFreqIndex = serde_json::from_reader(index_file)?;
+
+    println!("{global_index:?}");
+
+    Ok(())
+}
+
+fn main2() -> std::io::Result<()> {
     // let all_doc: HashMap<Path, Box<HashMap<String, usize>>> = HashMap::new();
     let dir_path = "docsgl/gl4";
 
@@ -141,7 +150,7 @@ fn main() {
 
         stats.reverse();
 
-        let top_tokens: Vec<_> = stats.iter().take(10).collect();
+        let _top_tokens: Vec<_> = stats.iter().take(10).collect();
 
         println!("Indexing {file_path:?} => {size}", size = content.len());
 
@@ -152,7 +161,15 @@ fn main() {
         global_index.insert(file_path, tf);
     }
 
+    let index_path = "index.json";
+    println!("Saving {index_path}");
+    let index_file = File::create(index_path).expect("Unable to create index file");
+
+    serde_json::to_writer(index_file, &global_index).expect("Unable to write to {index_path}");
+
     for (path, tf) in global_index {
         println!("{path:?} has {count} unique tokens", count = tf.len());
     }
+
+    Ok(())
 }
