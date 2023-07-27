@@ -1,6 +1,7 @@
 use serde_json;
 use std::collections::HashMap;
 use std::fs;
+use std::io::{BufReader, BufWriter};
 use std::ops::RangeBounds;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -94,7 +95,7 @@ fn parse_xml_file(file_path: &Path) -> Result<String, ()> {
         eprintln!("ERROR: could not open file {file_path:?}: {err}",);
     })?;
 
-    let er = EventReader::new(file);
+    let er = EventReader::new(BufReader::new(file));
 
     let mut content = String::new();
 
@@ -185,7 +186,7 @@ fn save_tf_index(tf_index: &TermFreqIndex, index_path: &str) -> Result<(), ()> {
         eprintln!("ERROR: could not create index file {index_path}: {err}");
     })?;
 
-    serde_json::to_writer(index_file, &tf_index).map_err(|err| {
+    serde_json::to_writer(BufWriter::new(index_file), &tf_index).map_err(|err| {
         eprintln!("ERROR: could not serialze index into file {index_path}: {err}");
     })?;
 
@@ -281,13 +282,20 @@ fn serve_request(tf_index: &TermFreqIndex, mut request: tiny_http::Request) -> R
                 println!("{path:?} => {rank}");
             }
 
-            // println!("Results :{results:?}");
+            let json = match serde_json::to_string(&results.iter().take(20).collect::<Vec<_>>()) {
+                Ok(json) => json,
+                Err(err) => {
+                    eprintln!("ERROR: could not convert search results to JSON: {err}");
+                    return serve_404(request);
+                }
+            };
 
-            request
-                .respond(Response::from_string("empty"))
-                .map_err(|err| {
-                    eprintln!("ERROR: {err}");
-                })?;
+            let content_type_header = Header::from_bytes("Content-Type", "application/json")
+                .expect("No garbage in header");
+
+            let _x = request
+                .respond(Response::from_string(&json).with_header(content_type_header))
+                .unwrap();
         }
         (Method::Get, "/index.js") => {
             let index_js = File::open("index.js").map_err(|err| {

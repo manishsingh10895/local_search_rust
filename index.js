@@ -17,7 +17,22 @@ async function search(prompt) {
 
   resultsDiv.innerHTML = "";
 
-  resultsDiv.innerHTML = json.toString();
+  for ([path, rank] of json) {
+    let item = document.createElement("div");
+    item.appendChild(document.createTextNode(path));
+    item.appendChild(document.createElement("br"));
+    resultsDiv.appendChild(item);
+  }
 }
 
-search("glsl function for linear interpolation");
+window.onload = () => {
+  let query = document.getElementById("query");
+
+  let currentSearch = Promise.resolve();
+
+  query.addEventListener("keypress", (e) => {
+    if (e.key == "Enter") {
+      currentSearch.then(() => search(query.value));
+    }
+  });
+};
