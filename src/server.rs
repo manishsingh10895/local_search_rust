@@ -2,7 +2,7 @@ use std::fs::File;
 
 use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 
-use crate::model::{search_query, TermFreqIndex};
+use crate::model::{search_query, Model, TermFreqPerDoc};
 
 fn serve_404(request: Request) -> Result<(), ()> {
     request
@@ -20,7 +20,7 @@ fn serve_500(request: Request) -> Result<(), ()> {
         })
 }
 
-fn serve_api_search(tf_index: &TermFreqIndex, mut request: tiny_http::Request) -> Result<(), ()> {
+fn serve_api_search(model: &Model, mut request: tiny_http::Request) -> Result<(), ()> {
     let mut buf = Vec::<u8>::new();
     request.as_reader().read_to_end(&mut buf).map_err(|err| {
         eprintln!("ERROR: Cannot read request body : {err}");
@@ -33,7 +33,7 @@ fn serve_api_search(tf_index: &TermFreqIndex, mut request: tiny_http::Request) -
         .chars()
         .collect::<Vec<_>>();
 
-    let results = search_query(&tf_index, &body);
+    let results = search_query(&model, &body);
 
     for (path, rank) in results.iter().take(10) {
         println!("{path:?} => {rank}");
@@ -72,7 +72,7 @@ fn serve_static_file(request: Request, file_path: &str, content_type: &str) -> R
     })
 }
 
-fn serve_request(tf_index: &TermFreqIndex, request: tiny_http::Request) -> Result<(), ()> {
+fn serve_request(model: &Model, request: tiny_http::Request) -> Result<(), ()> {
     println!(
         "INFO: Received request method: {:?}, url: {:?}",
         request.method(),
@@ -80,7 +80,7 @@ fn serve_request(tf_index: &TermFreqIndex, request: tiny_http::Request) -> Resul
     );
 
     match (request.method(), request.url()) {
-        (Method::Post, "/api/search") => serve_api_search(tf_index, request),
+        (Method::Post, "/api/search") => serve_api_search(model, request),
         (Method::Get, "/index.js") => {
             serve_static_file(request, "index.js", "text/javascript; charset=utf-8")
         }
@@ -91,7 +91,7 @@ fn serve_request(tf_index: &TermFreqIndex, request: tiny_http::Request) -> Resul
     }
 }
 
-pub fn start(address: &str, tf_index: &TermFreqIndex) -> Result<(), ()> {
+pub fn start(address: &str, model: &Model) -> Result<(), ()> {
     let server = Server::http(&address).map_err(|err| {
         eprintln!("ERROR: couldnot start the server at {address}: {err}");
     })?;
@@ -99,7 +99,7 @@ pub fn start(address: &str, tf_index: &TermFreqIndex) -> Result<(), ()> {
     println!("INFO: Listening at HTTP server at {address}");
 
     for request in server.incoming_requests() {
-        serve_request(&tf_index, request)?;
+        serve_request(&model, request)?;
     }
 
     eprintln!("ERROR: the server socket has shutdown");

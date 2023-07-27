@@ -4,10 +4,19 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use serde::{Deserialize, Serialize};
+
 use crate::lexer::Lexer;
 
 pub type TermFreq = HashMap<String, usize>; // frequency for a token
-pub type TermFreqIndex = HashMap<PathBuf, TermFreq>; // token frequency for a file
+pub type DocFreq = HashMap<String, usize>; // frequency for a token in all the documents
+pub type TermFreqPerDoc = HashMap<PathBuf, TermFreq>; // token frequency for a file
+
+#[derive(Deserialize, Serialize, Default)]
+pub struct Model {
+    pub tfpd: TermFreqPerDoc,
+    pub df: DocFreq,
+}
 
 /// Returns the TF for a term in a particular document
 pub fn tf(term: &str, doc: &TermFreq) -> f32 {
@@ -17,7 +26,7 @@ pub fn tf(term: &str, doc: &TermFreq) -> f32 {
     a / b
 }
 
-pub fn idf(term: &str, docs: &TermFreqIndex) -> f32 {
+pub fn idf(term: &str, docs: &TermFreqPerDoc) -> f32 {
     let n = docs.len() as f32;
     let m = docs
         .values()
@@ -28,16 +37,16 @@ pub fn idf(term: &str, docs: &TermFreqIndex) -> f32 {
     (n / m).log10() // smaller values are turned negative due to log
 }
 
-pub fn search_query<'a>(tf_index: &'a TermFreqIndex, query: &'a [char]) -> Vec<(&'a Path, f32)> {
+pub fn search_query<'a>(model: &'a Model, query: &'a [char]) -> Vec<(&'a Path, f32)> {
     let mut result = Vec::<(&Path, f32)>::new();
 
     let tokens = Lexer::new(&query).collect::<Vec<_>>();
 
-    for (path, tf_table) in tf_index {
+    for (path, tf_table) in &model.tfpd {
         let mut rank = 0f32;
 
         for token in &tokens {
-            rank += tf(&token, &tf_table) * idf(&token, &tf_index);
+            rank += tf(&token, &tf_table) * idf(&token, &model.tfpd);
         }
 
         result.push((path, rank));
