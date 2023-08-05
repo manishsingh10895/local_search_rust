@@ -1,22 +1,22 @@
 use model::{Model, TermFreqPerDoc};
 use serde_json;
-use std::collections::HashMap;
+
 use std::fs;
 use std::io::{BufReader, BufWriter};
-use std::ops::RangeBounds;
-use std::path::PathBuf;
+
 use std::process::ExitCode;
 use std::{fs::File, path::Path};
-use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
+
 use xml::common::{Position, TextPosition};
 use xml::reader::{EventReader, XmlEvent};
 
 use crate::lexer::Lexer;
-use crate::model::{idf, search_query, tf, TermFreq};
+use crate::model::TermFreq;
 
 mod lexer;
 mod model;
 mod server;
+mod snowball;
 
 // Parse an xml file and returns string containing only relevant characters
 fn parse_xml_file(file_path: &Path) -> Result<String, ()> {
@@ -126,6 +126,9 @@ fn add_folder_to_model(dir_path: &Path, model: &mut Model) -> Result<(), ()> {
 
         let mut tf = TermFreq::new();
 
+        // number of total terms in this file (a term can be repeated)
+        let mut num_terms = 0;
+
         for token in Lexer::new(&content) {
             let term = token;
 
@@ -134,6 +137,8 @@ fn add_folder_to_model(dir_path: &Path, model: &mut Model) -> Result<(), ()> {
             } else {
                 tf.insert(term, 1);
             }
+
+            num_terms += 1;
         }
 
         // For document frequency of the terms
@@ -147,7 +152,7 @@ fn add_folder_to_model(dir_path: &Path, model: &mut Model) -> Result<(), ()> {
             }
         }
 
-        model.tfpd.insert(file_path, tf);
+        model.tfpd.insert(file_path, (num_terms, tf));
     }
 
     Ok(())

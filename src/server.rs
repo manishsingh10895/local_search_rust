@@ -2,7 +2,7 @@ use std::fs::File;
 
 use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 
-use crate::model::{search_query, Model, TermFreqPerDoc};
+use crate::model::{search_query, Model};
 
 fn serve_404(request: Request) -> Result<(), ()> {
     request

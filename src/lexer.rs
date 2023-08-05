@@ -65,7 +65,7 @@ impl<'a> Lexer<'a> {
 }
 
 /// Iterator for the Lexer to iterate over
-/// generated tokens
+/// generated token
 impl<'a> Iterator for Lexer<'a> {
     type Item = String;
 

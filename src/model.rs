@@ -1,6 +1,5 @@
 use std::{
     collections::HashMap,
-    fs,
     path::{Path, PathBuf},
 };
 
@@ -10,7 +9,7 @@ use crate::lexer::Lexer;
 
 pub type TermFreq = HashMap<String, usize>; // frequency for a token
 pub type DocFreq = HashMap<String, usize>; // frequency for a token in all the documents
-pub type TermFreqPerDoc = HashMap<PathBuf, TermFreq>; // token frequency for a file
+pub type TermFreqPerDoc = HashMap<PathBuf, (usize, TermFreq)>; // token frequency for a file
 
 #[derive(Deserialize, Serialize, Default)]
 pub struct Model {
@@ -19,20 +18,23 @@ pub struct Model {
 }
 
 /// Returns the TF for a term in a particular document
-pub fn tf(term: &str, doc: &TermFreq) -> f32 {
+pub fn compute_tf(term: &str, n: usize, doc: &TermFreq) -> f32 {
     let a = doc.get(term).cloned().unwrap_or(0) as f32;
-    let b = doc.iter().map(|(_, f)| *f).sum::<usize>() as f32;
+    let b = n as f32;
 
     a / b
 }
 
-pub fn idf(term: &str, docs: &TermFreqPerDoc) -> f32 {
-    let n = docs.len() as f32;
-    let m = docs
-        .values()
-        .filter(|tf| tf.contains_key(term))
-        .count()
-        .max(1) as f32;
+/// Computes IDF for a term
+/// # Arguments
+///
+/// * `term` term for calculate for
+/// * `n_docs` number of total documents in the index
+/// * `df` document frequency hash map (map of number of documents a terms appears in)
+pub fn compute_idf(term: &str, n_docs: usize, df: &DocFreq) -> f32 {
+    let n = n_docs as f32;
+
+    let m = df.get(term).cloned().unwrap_or(1) as f32;
 
     (n / m).log10() // smaller values are turned negative due to log
 }
@@ -42,11 +44,12 @@ pub fn search_query<'a>(model: &'a Model, query: &'a [char]) -> Vec<(&'a Path, f
 
     let tokens = Lexer::new(&query).collect::<Vec<_>>();
 
-    for (path, tf_table) in &model.tfpd {
+    for (path, (n, tf_table)) in &model.tfpd {
         let mut rank = 0f32;
 
         for token in &tokens {
-            rank += tf(&token, &tf_table) * idf(&token, &model.tfpd);
+            rank += compute_tf(&token, *n, &tf_table)
+                * compute_idf(&token, model.tfpd.len(), &model.df);
         }
 
         result.push((path, rank));
