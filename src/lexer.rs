@@ -1,3 +1,5 @@
+use crate::snowball;
+
 // Lexer should contain the parsed document, doesn't modify
 #[derive(Debug)]
 pub struct Lexer<'a> {
@@ -42,8 +44,14 @@ impl<'a> Lexer<'a> {
                 .chop_while(|x| x.is_alphabetic())
                 .iter()
                 .map(|x| x.to_ascii_lowercase())
-                .collect();
-            return Some(term);
+                .collect::<String>();
+
+            // stemming of the term directly in lexer itself
+            let mut env = snowball::SnowballEnv::create(&term);
+            snowball::algorithms::english_stemmer::stem(&mut env);
+            let stemmed = env.get_current().to_string();
+
+            return Some(stemmed);
         }
 
         //lex numbers

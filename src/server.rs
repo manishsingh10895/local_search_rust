@@ -2,7 +2,7 @@ use std::fs::File;
 
 use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 
-use crate::model::{search_query, Model};
+use crate::model::Model;
 
 fn serve_404(request: Request) -> Result<(), ()> {
     request
@@ -33,7 +33,7 @@ fn serve_api_search(model: &Model, mut request: tiny_http::Request) -> Result<()
         .chars()
         .collect::<Vec<_>>();
 
-    let results = search_query(&model, &body);
+    let results = model.search_query(&body)?;
 
     for (path, rank) in results.iter().take(10) {
         println!("{path:?} => {rank}");

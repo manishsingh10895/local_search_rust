@@ -1,4 +1,4 @@
-use model::{Model, TermFreqPerDoc};
+use model::Model;
 use serde_json;
 
 use std::fs;
@@ -48,6 +48,31 @@ fn parse_xml_file(file_path: &Path) -> Result<String, ()> {
     Ok(content)
 }
 
+// parse an md or txt file
+fn parse_txt_file(file_path: &Path) -> Result<String, ()> {
+    fs::read_to_string(file_path).map_err(|err| {
+        eprintln!("ERROR: could not open file {file_path:?}: {err}");
+    })
+}
+
+fn parse_file_by_extension(file_path: &Path) -> Result<String, ()> {
+    let extension = file_path
+        .extension()
+        .ok_or_else(|| {
+            eprintln!("ERROR: can't detect file type for {file_path:?}");
+        })?
+        .to_string_lossy();
+
+    match extension.as_ref() {
+        "xhtml" | "xml" | "html" => parse_xml_file(file_path),
+        "txt" | "md" => parse_txt_file(file_path),
+        _ => {
+            eprintln!("ERROR: unsupported file type {file_path:?}");
+            Err(())
+        }
+    }
+}
+
 fn usage(program: &str) {
     eprintln!("Usage :{program} [SUBCOMMAND] [OPTIONS]");
     eprintln!("Subcommands:");
@@ -79,13 +104,13 @@ fn check_index(index_path: &str) -> Result<(), ()> {
         eprintln!("ERROR: could not open index file {index_path}: {err}");
     })?;
 
-    let tf_index: TermFreqPerDoc = serde_json::from_reader(index_file).map_err(|err| {
+    let model: Model = serde_json::from_reader(index_file).map_err(|err| {
         eprintln!("ERROR: could not parse index file {index_path}: {err}");
     })?;
 
     println!(
         "{index_path} contains {count} files",
-        count = tf_index.len()
+        count = model.docs.len()
     );
 
     Ok(())
@@ -109,50 +134,38 @@ fn add_folder_to_model(dir_path: &Path, model: &mut Model) -> Result<(), ()> {
             eprintln!("ERROR: couldnot determine file type for {file_path:?}: {err}");
         })?;
 
+        let last_modified = file
+            .metadata()
+            .map_err(|err| {
+                eprintln!("ERROR: could not get the metadata of the file {file_path:?}: {err}");
+            })?
+            .modified()
+            .map_err(|err| {
+                eprintln!(
+                    "ERROR: could not get the last modified data for the file {file_path:?}: {err}"
+                );
+            })?;
+
         if file_type.is_dir() {
             add_folder_to_model(&file_path, model)?;
             continue 'next_file;
         }
 
-        println!("Indexing {:?}... ", &file_path);
+        if model.requires_reindexing(&file_path, last_modified) {
+            println!("Indexing {:?}... ", &file_path);
 
-        // parse xml file,
-        // if error, ignore and carry on to next file
-        //
-        let content = match parse_xml_file(&file_path) {
-            Ok(content) => content.chars().collect::<Vec<_>>(),
-            Err(_) => continue 'next_file,
-        };
+            let content = match parse_file_by_extension(&file_path) {
+                Ok(content) => content.chars().collect::<Vec<_>>(),
+                Err(()) => {
+                    println!("Err");
+                    continue 'next_file;
+                }
+            };
 
-        let mut tf = TermFreq::new();
-
-        // number of total terms in this file (a term can be repeated)
-        let mut num_terms = 0;
-
-        for token in Lexer::new(&content) {
-            let term = token;
-
-            if let Some(freq) = tf.get_mut(&term) {
-                *freq += 1;
-            } else {
-                tf.insert(term, 1);
-            }
-
-            num_terms += 1;
+            model.add_document(file_path, last_modified, &content);
+        } else {
+            println!(r#"Ignoring {file_path:?} as it is already indexed"#);
         }
-
-        // For document frequency of the terms
-        // from lexer
-        // Increment all the terms by one for every file
-        for t in tf.keys() {
-            if let Some(freq) = model.df.get_mut(t) {
-                *freq += 1;
-            } else {
-                model.df.insert(t.to_string(), 1);
-            }
-        }
-
-        model.tfpd.insert(file_path, (num_terms, tf));
     }
 
     Ok(())
