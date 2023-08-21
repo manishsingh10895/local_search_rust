@@ -11,17 +11,18 @@ use crate::{lexer::Lexer, snowball};
 pub type TermFreq = HashMap<String, usize>; // frequency for a token
 pub type DocFreq = HashMap<String, usize>; // frequency for a token in all the documents
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct Doc {
     tf: TermFreq,
     count: usize,
-
+    // SystemTime is platform dependent
+    // to an index generated on mac  may not be deserialized
     last_modified: SystemTime,
 }
 
 type Docs = HashMap<PathBuf, Doc>; // token frequency for a file
 
-#[derive(Deserialize, Serialize, Default)]
+#[derive(Deserialize, Serialize, Default, Debug)]
 pub struct Model {
     pub docs: Docs,
     pub df: DocFreq,
@@ -50,6 +51,9 @@ pub fn compute_idf(term: &str, n_docs: usize, df: &DocFreq) -> f32 {
 }
 
 impl Model {
+    /// Remove a file from the model
+    /// and also decrements the model's `document frequency` for
+    /// all the terms accordingly
     pub fn remove_document(&mut self, file_path: &Path) {
         if let Some(doc) = self.docs.remove(file_path) {
             for t in doc.tf.keys() {
@@ -60,6 +64,9 @@ impl Model {
         }
     }
 
+    /// A document/file requires reindexing
+    /// * If it is already present in the index
+    /// * And the file is modified after being indexed
     pub fn requires_reindexing(&mut self, file_path: &Path, last_modified: SystemTime) -> bool {
         if let Some(doc) = self.docs.get(file_path) {
             return doc.last_modified < last_modified;
@@ -68,6 +75,7 @@ impl Model {
         return true;
     }
 
+    /// Search for a term `query` in the model
     pub fn search_query(&self, query: &[char]) -> Result<Vec<(PathBuf, f32)>, ()> {
         let mut result = Vec::new();
 
@@ -85,7 +93,9 @@ impl Model {
                     compute_tf(&stemmed, doc) * compute_idf(&stemmed, self.docs.len(), &self.df);
             }
 
-            result.push((path.clone(), rank));
+            if !rank.is_nan() && rank != 0.0 {
+                result.push((path.clone(), rank));
+            }
         }
 
         result.sort_by(|(_, sum_tf), (_, sum_tf_2)| sum_tf.partial_cmp(sum_tf_2).unwrap());
@@ -95,12 +105,14 @@ impl Model {
         Ok(result)
     }
 
+    /// Add a [file]/[document] to the model
     pub fn add_document(
         &mut self,
         file_path: PathBuf,
         last_modified: SystemTime,
         content: &[char],
     ) {
+        // if document is already present, removes the model
         self.remove_document(&file_path);
 
         let mut tf = TermFreq::new();

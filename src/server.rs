@@ -1,4 +1,7 @@
-use std::fs::File;
+use std::{
+    fs::File,
+    sync::{Arc, Mutex},
+};
 
 use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 
@@ -20,7 +23,7 @@ fn serve_500(request: Request) -> Result<(), ()> {
         })
 }
 
-fn serve_api_search(model: &Model, mut request: tiny_http::Request) -> Result<(), ()> {
+fn serve_api_search(model: Arc<Mutex<Model>>, mut request: tiny_http::Request) -> Result<(), ()> {
     let mut buf = Vec::<u8>::new();
     request.as_reader().read_to_end(&mut buf).map_err(|err| {
         eprintln!("ERROR: Cannot read request body : {err}");
@@ -33,11 +36,9 @@ fn serve_api_search(model: &Model, mut request: tiny_http::Request) -> Result<()
         .chars()
         .collect::<Vec<_>>();
 
-    let results = model.search_query(&body)?;
+    let model = model.lock().unwrap();
 
-    for (path, rank) in results.iter().take(10) {
-        println!("{path:?} => {rank}");
-    }
+    let results = model.search_query(&body)?;
 
     let json = match serde_json::to_string(&results.iter().take(20).collect::<Vec<_>>()) {
         Ok(json) => json,
@@ -72,7 +73,7 @@ fn serve_static_file(request: Request, file_path: &str, content_type: &str) -> R
     })
 }
 
-fn serve_request(model: &Model, request: tiny_http::Request) -> Result<(), ()> {
+fn serve_request(model: Arc<Mutex<Model>>, request: tiny_http::Request) -> Result<(), ()> {
     println!(
         "INFO: Received request method: {:?}, url: {:?}",
         request.method(),
@@ -91,7 +92,7 @@ fn serve_request(model: &Model, request: tiny_http::Request) -> Result<(), ()> {
     }
 }
 
-pub fn start(address: &str, model: &Model) -> Result<(), ()> {
+pub fn start(address: &str, model: Arc<Mutex<Model>>) -> Result<(), ()> {
     let server = Server::http(&address).map_err(|err| {
         eprintln!("ERROR: couldnot start the server at {address}: {err}");
     })?;
@@ -99,7 +100,12 @@ pub fn start(address: &str, model: &Model) -> Result<(), ()> {
     println!("INFO: Listening at HTTP server at {address}");
 
     for request in server.incoming_requests() {
-        serve_request(&model, request)?;
+        // convert to option, to not break on errors
+        serve_request(Arc::clone(&model), request)
+            .map_err(|err| {
+                eprintln!("ERROR: couldnot serve reponse: {err:?}");
+            })
+            .ok();
     }
 
     eprintln!("ERROR: the server socket has shutdown");
